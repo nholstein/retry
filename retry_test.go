@@ -33,7 +33,7 @@ func ExampleRetry(ctx context.Context, url string) error {
 		Backoff: time.Second,
 	}
 
-	for ctx := range r.Retry(ctx) {
+	for ctx, cancel := range r.Retry(ctx) {
 		// Failure to create a request object is fatal and likely
 		// due to a bad URL. Return without retrying.
 		req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
@@ -46,11 +46,11 @@ func ExampleRetry(ctx context.Context, url string) error {
 		rsp, err := http.DefaultClient.Do(req)
 		switch {
 		case err != nil:
-			fmt.Printf("GET request failed: %v\n", err)
+			cancel(fmt.Errorf("GET request failed: %w", err))
 			continue
 
 		case rsp.StatusCode < 200 || rsp.StatusCode >= 300:
-			fmt.Printf("GET status error: %d/%s\n", rsp.StatusCode, rsp.Status)
+			cancel(fmt.Errorf("GET status error: %d/%s", rsp.StatusCode, rsp.Status))
 			continue
 
 		default:
@@ -65,6 +65,8 @@ func ExampleRetry(ctx context.Context, url string) error {
 func TestSuccess(t *testing.T) {
 	ctx := testContext(t)
 	err := ExampleRetry(ctx, "https://go.dev")
+	t.Logf("received error: %v", err)
+
 	if err != nil {
 		t.Errorf("retry: %v", err)
 	}
@@ -73,7 +75,25 @@ func TestSuccess(t *testing.T) {
 func TestFailure(t *testing.T) {
 	ctx := testContext(t)
 	err := ExampleRetry(ctx, "https://go.dev/404.html")
+	t.Logf("received error: %v", err)
+
 	if !errors.Is(err, retry.ErrRetriesExceeded) {
 		t.Errorf("expected %v, got: %v", retry.ErrRetriesExceeded, err)
 	}
+}
+
+func ExampleRecordErrors() {
+	r := retry.Retry{Backoff: time.Millisecond}
+
+	for _, cause := range r.Retry(context.Background()) {
+		cause(errors.New("foobar"))
+	}
+
+	fmt.Print(r.Err())
+	// Output:
+	// retry count exceeded
+	// foobar
+	// foobar
+	// foobar
+	// foobar
 }

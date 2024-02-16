@@ -17,7 +17,7 @@ the `for` loop is passed a child context with a timeout applied.
 ```Go
 var r retry.Retry
 
-for childCtx := r.Retry(ctx) {
+for childCtx, _ := r.Retry(ctx) {
 	// perform the fallible request
 	err := someFallibleRequest(childCtx)
 	if err == nil {
@@ -54,7 +54,7 @@ Using rangefunc the code can directly return such an error:
 ```Go
 var r retry.Retry
 
-for childCtx := r.Retry(ctx) {
+for childCtx, _ := r.Retry(ctx) {
 	err := someFallibleRequest(childCtx)
 	select {
 	case errorIsNotRecoverable(err):
@@ -66,6 +66,26 @@ for childCtx := r.Retry(ctx) {
 }
 
 return r.Err()
+```
+
+The examples above discard any errors which cause a retry. These errors
+can be recorded using the `CancelCauseFunc` yielded alongside the child
+context:
+
+```Go
+var r retry.Retry
+
+for _, cause := range r.Retry(ctx) {
+    cause(errors.New("foobar"))
+}
+
+// outputs:
+//   retry count exceeded
+//   foobar
+//   foobar
+//   foobar
+//   foobar
+fmt.Print(r.Err())
 ```
 
 ## Thoughts on the rangefunc proposal
@@ -185,8 +205,9 @@ func retryLoop(ctx, retries int, yield func(context.Context) bool) error {
 
 While this improves the retry use case, it would be a fairly complicated
 addition to the proposal and the language for what's likely a fringe
-benefit. It's also a backward-compatible change; it could be retrofitted
-at a later date if desired.
+benefit. Because similar results can be achieved using existing language
+features without changing language constructs such a change doesn't seem
+beneficial.
 
 ¹ I don't believe this is an original idea; I have vague memories that
 this is possible using `yield` statements in Python/Ruby/Javascript/...
